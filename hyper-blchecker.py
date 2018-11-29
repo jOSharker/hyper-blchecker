@@ -1,27 +1,9 @@
 #!/usr/bin/env python
 """
-blchecker.py: checks a list of DNS blocklists for hosts and IPs.
-Given any hostname or IP address, this will try to resolve the matching
-IP/hostname, and check for both in all blocklists. For every match that
-is found, a warning is written to STDERR, and the return code will be 1.
-Gevent is used for concurrent lookups, the number of active greenlets
-is limited to PARALLELISM.
-
-Inspired by https://github.com/DjinnS/check-rbl
-Hosted at https://github.com/andreasf/check-dnsbl
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+hyper-blchecker.py: checks a list of DNS blocklists for hosts and IPs.
+Given any hostname, IP address or subnet (CIDR format), this will try to resolve the matching
+IP/hostname, and check for both in all blocklists enabled. For every match that
+is found, a warning is written on screen and is possible to use the option: -o to save the results in a CSV file.
 """
 
 import sys
@@ -30,11 +12,16 @@ import ipaddress
 import time
 import ConfigParser
 from multiprocessing import Pool
+import argparse
 
 LOOKUP_TIMEOUT = 6
 PARALLELISM = 10
 
 config = ConfigParser.ConfigParser()
+parser = argparse.ArgumentParser()
+
+
+
 config.read("./hyper-blchecker.properties")
 
 #####Importing the DNSBL lists
@@ -94,10 +81,7 @@ def lookup(host_rbl):
     rblhost = host[0] + "." + rbl
     try:
         socket.gethostbyname(rblhost)
-      #  sys.stderr.write("WARNING: %s found in spam blocklist %s!\n" % (host[-1], rbl))
-        #f.write(time.strftime("%Y%m%d %H:%M:%S")+','+host[-1]+','+rbl+'\n')
-       # sys.stderr.flush()
-        return "WARNING: %s found in spam blocklist %s!\n" % (host[-1], rbl)
+        return host[-1]+","+ rbl
     except socket.gaierror:
         return False
 
@@ -143,16 +127,26 @@ def get_host_and_ip(host_or_ip):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print_usage()
-        sys.exit(1)
+  #  if len(sys.argv) < 2:
+  #      print_usage()
+  #      sys.exit(1)
+
+    #parser.add_argument("-ver", help="increase output verbosity")
+
+    parser.add_argument("IPs", nargs='+', help="List of hostnames, IPs and subnets to be checked")
+    parser.add_argument("-o", "--output", help="Filename where to save the output")
+    parser.add_argument("-csv", "--csv", help="Output in csv format", action='store_true')
+    args = parser.parse_args()
+    #if args.ver:
+    #    print "verbosity turned on"
+    #if args.IPs:
+    #    print args.IPs
     socket.setdefaulttimeout(LOOKUP_TIMEOUT)
     hosts_rbls = []
-    #f = open('BL_'+time.strftime("%Y%m%d_%H%M%S")+'.csv','w')
-    #f.write('DATE,IP/Host,BLACKLIST\n')
     #hostname_or_ip = "93.39.93.66/32"
-  #  if hostname_or_ip : #
-    for hostname_or_ip in sys.argv[1:]:     #('93.39.93.66'):
+    #if hostname_or_ip : #
+    #for hostname_or_ip in sys.argv[1:]:
+    for hostname_or_ip in args.IPs:
         #check if CIDR format or not
         if hostname_or_ip.find('/') > 0:
             net = cidr_to_ips(hostname_or_ip)
@@ -172,17 +166,27 @@ def main():
    # print "####################################START"
    # print hosts_rbls
    # print "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$CLOSED"
-    print "START TIME: " + time.strftime("%Y%m%d_%H:%M:%S")
+    start_time = time.strftime("%Y%m%d_%H:%M:%S")
     in_rbl = exec_lookup_parallel(hosts_rbls)
-    print in_rbl
+    #print in_rbl
+    if args.csv:
+        if args.output:
+            f = open(args.output, 'w')
+        else:
+            f = open('BL_' + time.strftime("%Y%m%d_%H%M%S") + '.csv', 'w')
+        f.write("IP/HOSTNAME,BLACKLIST\n")
+        for element in in_rbl:
+            f.write(element + "\n")
+        f.close()
+
+    print "IP/HOSTNAME,BLACKLIST"
     for element in in_rbl:
-        f.write(element)
-    print "END TIME: " + time.strftime("%Y%m%d_%H:%M:%S")
+        print str(element).strip("\n")
+    print "START TIME: " + start_time + " END TIME: " + time.strftime("%Y%m%d_%H:%M:%S") + " # of actions to unblock: " + str(len(in_rbl))
    # if in_rbl:
    #     sys.exit(1)
 
 
 if __name__ in "__main__":
-    f = open('BL_' + time.strftime("%Y%m%d_%H%M%S") + '.csv', 'w')
+
     main()
-    f.close()
